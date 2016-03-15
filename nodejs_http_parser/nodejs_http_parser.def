@@ -1,0 +1,15 @@
+LIBRARY nodejs_http_parser
+EXPORTS
+  ;
+  ; Interop Methods
+  ;
+  http_parser_sizeof_size_t
+  http_parser_get_sizeof_types
+  http_parser_set_callback
+  ;
+  ; Original Native Methods
+  ;
+  http_parser_version
+  http_parser_init
+  http_parser_settings_init
+  http_parser_execute
