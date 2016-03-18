@@ -4,8 +4,7 @@ EXPORTS
   ; Interop Methods
   ;
   http_parser_sizeof_size_t
-  http_parser_get_sizeof_types
-  http_parser_set_callback
+  http_parser_get_sizes_and_offsets
   ;
   ; Original Native Methods
   ;

@@ -17,44 +17,27 @@ namespace NodeJS.HttpParser
     // These need to be synchronized with http_parser_interop.h
     //
     [StructLayout(LayoutKind.Sequential)]
-    internal struct http_parser_sizeof_types
+    internal struct http_parser_sizes_and_offsets
     {
         public NativeSizeT sizeofShort;
         public NativeSizeT sizeofInt;
         public NativeSizeT sizeofLong;
-        public NativeSizeT sizeofHttpParser;
-        public NativeSizeT sizeofHttpParserSettings;
-    };
-    
-    public enum CallbackID
-    {
-        MessageBegin      = 0,
-        //Url             = 1,
-        //Status          = 2,
-        //HeaderField     = 3,
-        //HeaderValue     = 4,
-        HeadersComplete   = 5,
-        //Body            = 6,
-        MessageComplete   = 7,
-        ChunkHeader       = 8,
-        ChunkComplete     = 9,
-        EnumLimit         = 10,
-    }
-    public enum DataCallbackID
-    {
-        // MessageBegin   = 0
-        Url               = 1,
-        Status            = 2,
-        HeaderField       = 3,
-        HeaderValue       = 4,
-        //HeadersComplete = 5,
-        Body            = 6,
-        //MessageComplete = 7,
-        //ChunkHeader     = 8,
-        //ChunkComplete   = 9
-        EnumLimit         = 10,
-    }
 
+        // HttpParser offsetofs
+        public NativeSizeT sizeofHttpParser;
+        public NativeSizeT offsetOfHttpParserNRead;
+        public NativeSizeT offsetOfHttpParserContentLength;
+        public NativeSizeT offsetOfHttpParserHttpMajor;
+        public NativeSizeT offsetOfHttpParserHttpMinor;
+        public NativeSizeT offsetOfHttpParserData;
+
+        // HttpParserSettings offsetofs
+        // Getting offest of 1st, 2nd and last should be good enough
+        public NativeSizeT sizeofHttpParserSettings;
+        public NativeSizeT offsetOfHttpParserSettingsOnMessageBegin;
+        public NativeSizeT offsetOfHttpParserSettingsOnUrl;
+        public NativeSizeT offsetOfHttpParserSettingsOnChunkComplete;
+    };
 
     /// <summary>
     /// These native methods are in addition to the native http-parser api.  These methods
@@ -66,64 +49,73 @@ namespace NodeJS.HttpParser
         internal static extern NativeSizeT http_parser_sizeof_size_t();
 
         [DllImport("nodejs_http_parser")]
-        internal static unsafe extern void http_parser_get_sizeof_types(http_parser_sizeof_types* sizeofTypes);
+        internal static unsafe extern void http_parser_get_sizes_and_offsets(http_parser_sizes_and_offsets* sizeofTypes);
 
-        [DllImport("nodejs_http_parser", EntryPoint = "http_parser_set_callback")]
-        public static extern unsafe NativeInt TrySetCallback(http_parser_settings* settings, CallbackID callbackID, HttpCallback callback);
-        [DllImport("nodejs_http_parser", EntryPoint = "http_parser_set_callback")]
-        public static extern unsafe NativeInt TrySetCallback(http_parser_settings* settings, DataCallbackID callbackID, HttpDataCallback callback);
-
-        public static unsafe void SetCallback(http_parser_settings* settings, CallbackID callbackID, HttpCallback callback)
+        static void AssertMatch(String name, UInt32 nativeSize, UInt32 managedSize)
         {
-            NativeInt errorCode = TrySetCallback(settings, callbackID, callback);
-            if (errorCode != 0)
+            if (nativeSize != managedSize)
             {
-                throw new InvalidOperationException(String.Format("Failed to set the '{0}' callback (return code {1})", callbackID, errorCode));
+                throw new InteropMismatchException(name, nativeSize, managedSize);
             }
         }
-        public static unsafe void SetCallback(http_parser_settings* settings, DataCallbackID callbackID, HttpDataCallback callback)
-        {
-            NativeInt errorCode = TrySetCallback(settings, callbackID, callback);
-            if (errorCode != 0)
-            {
-                throw new InvalidOperationException(String.Format("Failed to set the '{0}' callback (return code {1})", callbackID, errorCode));
-            }
-        }
+
         public static unsafe void VerifyInteropTypes()
         {
+            if (sizeof(IntPtr) != sizeof(GCHandle))
+            {
+                throw new InvalidOperationException(String.Format(
+                    "This library assumes that sizeof(IntPtr) {0} is equal to sizeof(GCHandle) {1} but aren't",
+                    sizeof(IntPtr), sizeof(GCHandle)));
+            }
+
+            //
+            // Verify that size_t is matched first
+            //
             NativeSizeT sizeofSizeT = http_parser_sizeof_size_t();
-            if (sizeofSizeT != sizeof(NativeSizeT))
-            {
-                throw new InvalidOperationException(String.Format("native sizeof(size_t) {0} != sizeof(NativeSizeT) {1}",
-                    sizeofSizeT, sizeof(NativeSizeT)));
-            }
-            http_parser_sizeof_types sizeofTypes = new http_parser_sizeof_types();
-            http_parser_get_sizeof_types(&sizeofTypes);
-            if (sizeofTypes.sizeofShort != sizeof(NativeShort))
-            {
-                throw new InvalidOperationException(String.Format("native sizeof(short) {0} != sizeof(NativeShort) {1}",
-                    sizeofTypes.sizeofShort, sizeof(NativeShort)));
-            }
-            if (sizeofTypes.sizeofInt != sizeof(NativeInt))
-            {
-                throw new InvalidOperationException(String.Format("native sizeof(int) {0} != sizeof(NativeInt) {1}",
-                    sizeofTypes.sizeofInt, sizeof(NativeInt)));
-            }
-            if (sizeofTypes.sizeofLong != sizeof(NativeLong))
-            {
-                throw new InvalidOperationException(String.Format("native sizeof(long) {0} != sizeof(NativeLong) {1}",
-                    sizeofTypes.sizeofLong, sizeof(NativeLong)));
-            }
-            if (sizeofTypes.sizeofHttpParser != sizeof(http_parser))
-            {
-                throw new InvalidOperationException(String.Format("native sizeof(http_parser) {0} != sizeof(http_parser) {1}",
-                    sizeofTypes.sizeofHttpParser, sizeof(http_parser)));
-            }
-            if (sizeofTypes.sizeofHttpParserSettings != sizeof(http_parser_settings))
-            {
-                throw new InvalidOperationException(String.Format("native sizeof(http_parser_settings) {0} != sizeof(http_parser_settings) {1}",
-                    sizeofTypes.sizeofHttpParserSettings, sizeof(http_parser_settings)));
-            }
+            AssertMatch("sizeof(size_t)", sizeofSizeT, sizeof(NativeSizeT));
+
+            //
+            // Request all the sizes and offsets from the native code
+            //
+            http_parser_sizes_and_offsets sizesAndOffsets = new http_parser_sizes_and_offsets();
+            http_parser_get_sizes_and_offsets(&sizesAndOffsets);
+
+            //
+            // Verify the rest of the sizes and offsets
+            //
+            AssertMatch("sizeof(short)", sizesAndOffsets.sizeofShort, sizeof(NativeShort));
+            AssertMatch("sizeof(int)"  , sizesAndOffsets.sizeofInt, sizeof(NativeInt));
+            AssertMatch("sizeof(long)" , sizesAndOffsets.sizeofLong, sizeof(NativeLong));
+
+            // Verify http_parser
+            AssertMatch("sizeof(http_parser)", sizesAndOffsets.sizeofHttpParser, (uint)sizeof(http_parser));
+            AssertMatch("offsetof(http_parser, nread)", sizesAndOffsets.offsetOfHttpParserNRead,
+                (uint)Marshal.OffsetOf(typeof(http_parser), "nread").ToInt32());
+            AssertMatch("offsetof(http_parser, content_length)", sizesAndOffsets.offsetOfHttpParserContentLength,
+                (uint)Marshal.OffsetOf(typeof(http_parser), "content_length").ToInt32());
+            AssertMatch("offsetof(http_parser, http_major)", sizesAndOffsets.offsetOfHttpParserHttpMajor,
+                (uint)Marshal.OffsetOf(typeof(http_parser), "http_major").ToInt32());
+            AssertMatch("offsetof(http_parser, http_minor)", sizesAndOffsets.offsetOfHttpParserHttpMinor,
+                (uint)Marshal.OffsetOf(typeof(http_parser), "http_minor").ToInt32());
+            AssertMatch("offsetof(http_parser, data)", sizesAndOffsets.offsetOfHttpParserData,
+                (uint)Marshal.OffsetOf(typeof(http_parser), "data").ToInt32());
+
+            // Verify http_parser_settings
+            AssertMatch("sizeof(http_parser_settings)", sizesAndOffsets.sizeofHttpParserSettings, (uint)sizeof(http_parser_settings));
+            AssertMatch("offsetof(http_parser, on_message_begin)", sizesAndOffsets.offsetOfHttpParserSettingsOnMessageBegin,
+                (uint)Marshal.OffsetOf(typeof(http_parser_settings), "on_message_begin").ToInt32());
+            AssertMatch("offsetof(http_parser, on_url)", sizesAndOffsets.offsetOfHttpParserSettingsOnUrl,
+                (uint)Marshal.OffsetOf(typeof(http_parser_settings), "on_url").ToInt32());
+            AssertMatch("offsetof(http_parser, on_chunk_complete)", sizesAndOffsets.offsetOfHttpParserSettingsOnChunkComplete,
+                (uint)Marshal.OffsetOf(typeof(http_parser_settings), "on_chunk_complete").ToInt32());
+        }
+    }
+
+    public class InteropMismatchException : InvalidOperationException
+    {
+        public InteropMismatchException(String name, UInt32 nativeValue, UInt32 managedValue)
+            : base(String.Format("{0} mismatch (native={1}, managed={2})", name, nativeValue, managedValue))
+        {
         }
     }
 }

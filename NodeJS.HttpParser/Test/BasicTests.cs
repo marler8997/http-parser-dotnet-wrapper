@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Text;
-using System.Collections.Generic;
-using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+
+using More;
 
 using NativeShort = System.Int16;
 using NativeInt   = System.Int32;
@@ -40,25 +40,12 @@ namespace NodeJS.HttpParser
             HttpParser.VerifyInteropTypes();
         }
         [TestMethod]
-        public unsafe void TestInitializingParserSettingsSafe()
+        public unsafe void TestInitializingParserSettings()
         {
             http_parser_settings settings = new http_parser_settings();
             HttpParser.SettingsInit(&settings);
-
-            // The Unsafe way (does not keep managed references to callbacks)
-            HttpParser.SetCallback(&settings, CallbackID.MessageBegin, PrintOnMessageBegin);
-            HttpParser.SetCallback(&settings, DataCallbackID.Url     , PrintOnUrl);
-        }
-        [TestMethod]
-        public unsafe void TestInitializingParserSettingsUnsafe()
-        {
-            http_parser_settings settings = new http_parser_settings();
-            HttpParser.SettingsInit(&settings);
-
-            // The Safe Way (keeps a managed dictionary of references to callbacks)
-            http_parser_settings_references settingsManager = new http_parser_settings_references(false);
-            settingsManager.SetCallback(&settings, CallbackID.MessageBegin, PrintOnMessageBegin);
-            settingsManager.SetCallback(&settings, DataCallbackID.Url     , PrintOnUrl);
+            settings.on_message_begin.Set(PrintOnMessageBegin);
+            settings.on_url.Set(PrintOnUrl);
         }
 
         static unsafe void ParseExample(http_parser_settings* settings, String example)
@@ -71,7 +58,7 @@ namespace NodeJS.HttpParser
             HttpParser.Init(&parser, http_parser_type.Both);
 
             Byte* exampleBytes = stackalloc Byte[example.Length];
-            HttpParser.Utf16ToAscii(example, exampleBytes);
+            Unicode.Utf16ToAscii(example, exampleBytes);
 
             NativeSizeT parseLength = HttpParser.Execute(&parser, settings,
                 exampleBytes, (NativeSizeT)example.Length);
@@ -83,36 +70,31 @@ namespace NodeJS.HttpParser
         {
             http_parser_settings settings = new http_parser_settings();
             HttpParser.SettingsInit(&settings);
-
-            // The Unsafe way (does not keep managed references to callbacks)
-            // If you do this, you need to make sure that the objects associated with the
-            // callbacks are referenced by something so they do not get garbage collected when you
-            // call HttpParser.Execute.
-            HttpParser.SetCallback(&settings, CallbackID.MessageBegin, PrintOnMessageBegin);
-            HttpParser.SetCallback(&settings, DataCallbackID.Url     , PrintOnUrl);
+            settings.on_message_begin.Set(PrintOnMessageBegin);
+            settings.on_url.Set(PrintOnUrl);
 
             // Parse some examples
             ParseExample(&settings, "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
             ParseExample(&settings, "HTTP/1.1 200 OK\r\n\r\n");
         }
 
-        static unsafe NativeInt PrintOnMessageBegin(http_parser* parser)
+        static unsafe NativeInt PrintOnMessageBegin(ref http_parser parser)
         {
             Console.WriteLine("[ParserCallback] MessageBegin");
             return 0;
         }
-        static unsafe NativeInt PrintOnUrl(http_parser* parser, byte* at, NativeSizeT length)
+        static unsafe NativeInt PrintOnUrl(ref http_parser parser, BytePtr at, NativeSizeT length)
         {
-            Console.WriteLine("[ParserCallback] OnUrl (method={0})", parser->method);
+            Console.WriteLine("[ParserCallback] OnUrl (method={0})", parser.method);
             for (NativeSizeT i = 0; i < length; i++)
             {
                 Console.WriteLine("[ParserCallback]   [{0}] '{1}' {2}", i, (Char)at[i], at[i]);
             }
             return 0;
         }
-        static unsafe NativeInt PrintOnStatus(http_parser* parser, byte* at, NativeSizeT length)
+        static unsafe NativeInt PrintOnStatus(ref http_parser parser, BytePtr at, NativeSizeT length)
         {
-            Console.WriteLine("[ParserCallback] OnStatus (HTTP/{0}.{1})", parser->http_major, parser->http_minor);
+            Console.WriteLine("[ParserCallback] OnStatus (HTTP/{0}.{1})", parser.http_major, parser.http_minor);
             for (NativeSizeT i = 0; i < length; i++)
             {
                 Console.WriteLine("[ParserCallback]   [{0}] '{1}' {2}", i, (Char)at[i], at[i]);

@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Threading;
 
 using More;
@@ -357,6 +358,9 @@ namespace More.Net
             }
         }
     }
+}
+namespace More
+{
     // This class wraps a Byte array that can be passed to and from functions
     // that will ensure that the array will be expanded to accomodate as much data is needed.
     public class Buf
